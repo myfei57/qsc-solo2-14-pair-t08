@@ -27,6 +27,12 @@ class Settings:
     cip_certificate_ttl_min: int = 240
     pressure_limit_bar: float = 1.8
     hop_window_slack_min: float = 5.0
+    # 冷凝水水质门限：任一指标越界即判不合格，阀门故障安全切排放
+    conductivity_max_us_cm: float = 1000.0
+    ph_min: float = 6.5
+    ph_max: float = 8.5
+    hardness_max_mg_l: float = 30.0
+    oil_max_mg_l: float = 1.0
     log_level: str = "INFO"
 
     def validate(self) -> "Settings":
@@ -40,6 +46,13 @@ class Settings:
         require_int(self.cip_certificate_ttl_min, field="cip_certificate_ttl_min", minimum=5, maximum=2880)
         require_number(self.pressure_limit_bar, field="pressure_limit_bar", minimum=0.1, maximum=10.0)
         require_number(self.hop_window_slack_min, field="hop_window_slack_min", minimum=0.0, maximum=60.0)
+        require_number(self.conductivity_max_us_cm, field="conductivity_max_us_cm", minimum=1.0, maximum=20000.0)
+        require_number(self.ph_min, field="ph_min", minimum=0.0, maximum=14.0)
+        require_number(self.ph_max, field="ph_max", minimum=0.0, maximum=14.0)
+        require_number(self.hardness_max_mg_l, field="hardness_max_mg_l", minimum=0.0, maximum=1000.0)
+        require_number(self.oil_max_mg_l, field="oil_max_mg_l", minimum=0.0, maximum=100.0)
+        if self.ph_min > self.ph_max:
+            raise ValidationError("pH 下限不能高于上限", ph_min=self.ph_min, ph_max=self.ph_max)
         if self.log_level.upper() not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
             raise ValidationError("log_level 取值不合法", field="log_level", value=self.log_level)
         return self
@@ -76,6 +89,11 @@ class Settings:
             "cip_certificate_ttl_min": self.cip_certificate_ttl_min,
             "pressure_limit_bar": self.pressure_limit_bar,
             "hop_window_slack_min": self.hop_window_slack_min,
+            "conductivity_max_us_cm": self.conductivity_max_us_cm,
+            "ph_min": self.ph_min,
+            "ph_max": self.ph_max,
+            "hardness_max_mg_l": self.hardness_max_mg_l,
+            "oil_max_mg_l": self.oil_max_mg_l,
             "log_level": self.log_level.upper(),
         }
 
@@ -91,6 +109,11 @@ class Settings:
             "pitch_temp_max_c",
             "pressure_limit_bar",
             "hop_window_slack_min",
+            "conductivity_max_us_cm",
+            "ph_min",
+            "ph_max",
+            "hardness_max_mg_l",
+            "oil_max_mg_l",
         )
         values: dict[str, Any] = {}
         for key in text_keys:

@@ -113,6 +113,29 @@ class ReadingQuality(str, Enum):
     REJECTED = "rejected"
 
 
+class RecoveryStage(str, Enum):
+    """余热回收批次运行状态。"""
+
+    IDLE = "idle"
+    ACTIVE = "active"
+    CLOSED = "closed"
+
+
+class CondensateRoute(str, Enum):
+    """蒸汽冷凝水去向：回收进热水罐或直排地漏。"""
+
+    DIVERT = "divert"
+    RECOVER = "recover"
+
+
+class WaterQualityStatus(str, Enum):
+    """冷凝水水质门限判定。"""
+
+    UNKNOWN = "unknown"
+    PASS = "pass"
+    FAIL = "fail"
+
+
 class DocMixin:
     """把数据类转换为可持久化文档。"""
 
@@ -216,6 +239,39 @@ class BoilRun(DocMixin):
     boiling_at: str | None = None
     whirlpool_at: str | None = None
     completed_at: str | None = None
+    updated_at: str = ""
+
+
+@dataclass
+class RecoveryRun(DocMixin):
+    """一个批次的余热回收运行台账。
+
+    热水侧热量表是回收热量的权威计量；冷凝水侧流量表按
+    「回收 / 排放」两路分别累计。水质不合格时阀门故障安全地
+    切到直排，并锁定到人工复位。
+    """
+
+    id: str
+    batch_id: str
+    brewery_id: str
+    stage: str = RecoveryStage.IDLE.value
+    route: str = CondensateRoute.DIVERT.value
+    quality_status: str = WaterQualityStatus.UNKNOWN.value
+    quality_latched: bool = False
+    last_sample_id: str | None = None
+    # 冷凝水累计流量（kg）：总量 / 回收 / 排放
+    condensate_total_kg: float = 0.0
+    condensate_recovered_kg: float = 0.0
+    condensate_diverted_kg: float = 0.0
+    # 二次蒸汽冷凝产生的二次水（kg），仅作热源记录
+    vapor_condensate_kg: float = 0.0
+    # 热水侧累计热量表（权威计量）
+    hotwater_mass_kg: float = 0.0
+    energy_recovered_kj: float = 0.0
+    last_hot_in_c: float | None = None
+    last_hot_out_c: float | None = None
+    started_at: str | None = None
+    closed_at: str | None = None
     updated_at: str = ""
 
 

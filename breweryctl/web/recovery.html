@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BreweryCtl · 余热回收</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>BreweryCtl 余热回收</h1>
+      <nav>
+        <a href="/mash">糖化</a>
+        <a href="/ferment">发酵</a>
+        <a href="/cip">清洗 CIP</a>
+        <a class="active" href="/recovery">余热回收</a>
+        <a href="/alarms">告警与审计</a>
+      </nav>
+    </header>
+    <div class="banner">
+      回收热量 <strong id="banner-energy">-</strong> kJ
+      等价蒸汽 <strong id="banner-steam">-</strong> kg
+      冷凝水回用率 <strong id="banner-reuse">-</strong>
+    </div>
+    <main>
+      <section>
+        <h2>批次运行</h2>
+        <label for="batch-select">批次</label>
+        <select id="batch-select" onchange="refreshReport()"></select>
+        <label for="actor">操作员</label>
+        <input id="actor" value="console" />
+        <button
+          onclick="run(() => apiPost('/api/recovery/batches/' + value('batch-select') + '/start', { actor: value('actor') }), 'rec-log', refreshReport)"
+        >
+          开始回收（默认直排）
+        </button>
+        <button
+          onclick="run(() => apiPost('/api/recovery/batches/' + value('batch-select') + '/close', { actor: value('actor') }), 'rec-log', refreshReport)"
+        >
+          结束回收
+        </button>
+        <div id="rec-log"></div>
+      </section>
+
+      <section>
+        <h2>冷凝水水质门限</h2>
+        <label for="cond">电导率 (µS/cm)</label>
+        <input id="cond" type="number" step="1" value="200" />
+        <label for="ph">pH</label>
+        <input id="ph" type="number" step="0.1" value="7.0" />
+        <label for="hardness">硬度 (mg/L CaCO₃)</label>
+        <input id="hardness" type="number" step="0.1" value="5" />
+        <label for="oil">油含量 (mg/L)</label>
+        <input id="oil" type="number" step="0.01" value="0.1" />
+        <button
+          onclick="run(() => apiPost('/api/recovery/batches/' + value('batch-select') + '/quality', { actor: value('actor'), sample: { conductivity_us_cm: numberValue('cond'), ph: numberValue('ph'), hardness_mg_l: numberValue('hardness'), oil_mg_l: numberValue('oil') } }), 'rec-log', refreshReport)"
+        >
+          送检并切换阀门
+        </button>
+        <button
+          onclick="run(() => apiPost('/api/recovery/batches/' + value('batch-select') + '/resume', { actor: value('actor') }), 'rec-log', refreshReport)"
+        class="secondary"
+        >
+          水质合格后人工复位回收
+        </button>
+      </section>
+
+      <section>
+        <h2>累计表读数</h2>
+        <label for="cond-total">蒸汽冷凝水累计 (kg)</label>
+        <input id="cond-total" type="number" step="1" />
+        <button
+          onclick="run(() => apiPost('/api/recovery/batches/' + value('batch-select') + '/meters/condensate', { totalizer_kg: numberValue('cond-total') }), 'rec-log', refreshReport)"
+        >
+          上报冷凝水表
+        </button>
+
+        <label for="hw-total">热水累计 (kg)</label>
+        <input id="hw-total" type="number" step="1" />
+        <label for="hw-in">热水入口 (°C)</label>
+        <input id="hw-in" type="number" step="0.1" value="15" />
+        <label for="hw-out">热水出口 (°C)</label>
+        <input id="hw-out" type="number" step="0.1" value="60" />
+        <button
+          onclick="run(() => apiPost('/api/recovery/batches/' + value('batch-select') + '/meters/hotwater', { totalizer_kg: numberValue('hw-total'), temp_in_c: numberValue('hw-in'), temp_out_c: numberValue('hw-out') }), 'rec-log', refreshReport)"
+        >
+          上报热水热量表
+        </button>
+
+        <label for="vap-total">二次蒸汽凝结水累计 (kg)</label>
+        <input id="vap-total" type="number" step="1" />
+        <button
+          onclick="run(() => apiPost('/api/recovery/batches/' + value('batch-select') + '/meters/vapor', { totalizer_kg: numberValue('vap-total') }), 'rec-log', refreshReport)"
+          class="secondary"
+        >
+          上报二次水表（仅热源）
+        </button>
+      </section>
+
+      <section>
+        <h2>批次核算</h2>
+        <button class="secondary" onclick="refreshReport()">刷新</button>
+        <pre id="report-view">尚未加载</pre>
+      </section>
+
+      <section>
+        <h2>全厂台账</h2>
+        <button class="secondary" onclick="refreshLedger()">汇总</button>
+        <pre id="ledger-view">尚未加载</pre>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+    <script>
+      async function initRecoveryPage() {
+        await loadBatches("batch-select");
+        refreshLedger();
+        refreshReport();
+      }
+
+      async function refreshReport() {
+        const batchId = value("batch-select");
+        if (!batchId) {
+          return;
+        }
+        try {
+          const report = await apiGet("/api/recovery/batches/" + batchId);
+          write("report-view", report);
+        } catch (error) {
+          write("report-view", { hint: "该批次尚未建立回收运行", error: error.message });
+        }
+      }
+
+      async function refreshLedger() {
+        const ledger = await apiGet("/api/recovery/ledger");
+        write("ledger-view", ledger);
+        element("banner-energy").textContent = Math.round(ledger.energy_recovered_kj || 0);
+        element("banner-steam").textContent = Math.round(ledger.steam_equivalent_kg || 0);
+        element("banner-reuse").textContent =
+          ledger.reuse_ratio == null ? "-" : (ledger.reuse_ratio * 100).toFixed(1) + "%";
+      }
+
+      initRecoveryPage();
+    </script>
+  </body>
+</html>

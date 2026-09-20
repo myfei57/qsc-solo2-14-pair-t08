@@ -49,6 +49,21 @@ PAGE_CATALOG: tuple[dict[str, Any], ...] = (
         "description": "告警确认、解除与批次审计查询",
         "api": ["/api/alarms", "/api/alarms/{alarm_id}/ack", "/api/audit"],
     },
+    {
+        "slug": "recovery",
+        "title": "余热回收",
+        "file": "recovery.html",
+        "description": "二次蒸汽取热、冷凝水分质回用与回收量核算",
+        "api": [
+            "/api/recovery/batches/{batch_id}/start",
+            "/api/recovery/batches/{batch_id}/quality",
+            "/api/recovery/batches/{batch_id}/resume",
+            "/api/recovery/batches/{batch_id}/meters/condensate",
+            "/api/recovery/batches/{batch_id}/meters/hotwater",
+            "/api/recovery/batches/{batch_id}",
+            "/api/recovery/ledger",
+        ],
+    },
 )
 
 

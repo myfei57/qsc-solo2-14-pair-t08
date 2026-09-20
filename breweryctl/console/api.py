@@ -65,6 +65,15 @@ ROUTES: tuple[tuple[str, str], ...] = (
     ("POST", "/api/maintenance/cycles/{cycle_id}/advance"),
     ("POST", "/api/maintenance/cycles/{cycle_id}/finish"),
     ("POST", "/api/maintenance/circuits/{circuit_id}/flush"),
+    ("POST", "/api/recovery/batches/{batch_id}/start"),
+    ("POST", "/api/recovery/batches/{batch_id}/close"),
+    ("POST", "/api/recovery/batches/{batch_id}/quality"),
+    ("POST", "/api/recovery/batches/{batch_id}/resume"),
+    ("POST", "/api/recovery/batches/{batch_id}/meters/condensate"),
+    ("POST", "/api/recovery/batches/{batch_id}/meters/hotwater"),
+    ("POST", "/api/recovery/batches/{batch_id}/meters/vapor"),
+    ("GET", "/api/recovery/batches/{batch_id}"),
+    ("GET", "/api/recovery/ledger"),
     ("GET", "/api/alarms"),
     ("POST", "/api/alarms/{alarm_id}/ack"),
     ("POST", "/api/alarms/{alarm_id}/resolve"),
@@ -494,6 +503,65 @@ class ApiRouter:
         return self.registry.maintenance.flush_circuit(
             params["circuit_id"], body.get("flow_m3h"), body.get("operator")
         )
+
+    def _handle_POST_api_recovery_batches_batch_id_start(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.start(params["batch_id"], body.get("actor"))
+
+    def _handle_POST_api_recovery_batches_batch_id_close(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.close(params["batch_id"], body.get("actor"))
+
+    def _handle_POST_api_recovery_batches_batch_id_quality(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        sample = body.get("sample")
+        if not isinstance(sample, dict):
+            raise ValidationError("sample 必须是水质指标对象", field="sample")
+        return self.registry.recovery.sample_quality(
+            params["batch_id"], sample, body.get("actor")
+        )
+
+    def _handle_POST_api_recovery_batches_batch_id_resume(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.resume(params["batch_id"], body.get("actor"))
+
+    def _handle_POST_api_recovery_batches_batch_id_meters_condensate(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.record_condensate(
+            params["batch_id"], body.get("totalizer_kg")
+        )
+
+    def _handle_POST_api_recovery_batches_batch_id_meters_hotwater(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.record_hotwater(
+            params["batch_id"],
+            body.get("totalizer_kg"),
+            body.get("temp_in_c"),
+            body.get("temp_out_c"),
+        )
+
+    def _handle_POST_api_recovery_batches_batch_id_meters_vapor(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.record_vapor_condensate(
+            params["batch_id"], body.get("totalizer_kg")
+        )
+
+    def _handle_GET_api_recovery_batches_batch_id(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.report(params["batch_id"])
+
+    def _handle_GET_api_recovery_ledger(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery.ledger(_first(query, "brewery_id"))
 
     def _handle_GET_api_alarms(
         self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]

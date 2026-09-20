@@ -44,7 +44,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertIn("banner", overview)
         status, pages = self.call("GET", "/api/pages")
-        self.assertEqual(4, len(pages["pages"]))
+        self.assertEqual(5, len(pages["pages"]))
         self.assertGreaterEqual(len(pages["routes"]), 50)
 
     def test_sequence_error_maps_to_conflict(self) -> None:
