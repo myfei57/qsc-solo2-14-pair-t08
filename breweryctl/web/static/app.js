@@ -177,6 +177,122 @@ async function initAlarmsPage() {
   await loadBatches("audit-batch-select");
 }
 
+async function initRecoveryPage() {
+  const overview = await apiGet("/api/state");
+  const recovery = overview.recovery || {};
+  write("banner-units", recovery.units || 0);
+  write("banner-settled", recovery.settled || 0);
+  write("banner-alarms", overview.banner.active_alarms);
+  write("banner-latches", overview.banner.latching_alarms);
+  await loadBatches("batch-select");
+  const units = await apiGet("/api/recovery/units");
+  if (units.units.length) {
+    element("unit-id").value = units.units[0].id;
+  }
+  await refreshRecoveryRun();
+  await loadRecoveryReport();
+}
+
+async function refreshRecoveryRuns() {
+  await loadBatches("batch-select");
+  return refreshRecoveryRun();
+}
+
+async function refreshRecoveryRun() {
+  const batchId = value("batch-select");
+  if (!batchId) {
+    return null;
+  }
+  try {
+    const view = await apiGet("/api/recovery/runs/" + encodeURIComponent(batchId));
+    write("run-view", view);
+    if (view.run && view.run.unit_id) {
+      element("unit-id").value = view.run.unit_id;
+    }
+    return view;
+  } catch (error) {
+    write("run-view", { note: "该批次尚无回收台账", reason: error.message });
+    return null;
+  }
+}
+
+async function armRecovery() {
+  const payload = await apiPost("/api/recovery/runs", {
+    unit_id: value("unit-id"),
+    batch_id: value("batch-select"),
+    planned_vapor_kg: numberValue("planned-vapor"),
+    planned_condensate_kg: numberValue("planned-condensate"),
+  });
+  write("run-view", payload);
+  return payload;
+}
+
+function qualityValues() {
+  const fields = {
+    "qw-cond": "conductivity_us_cm",
+    "qw-ph": "ph",
+    "qw-hardness": "hardness_mg_l",
+    "qw-chloride": "chloride_mg_l",
+    "qw-sulfate": "sulfate_mg_l",
+    "qw-nitrate": "nitrate_mg_l",
+    "qw-iron": "iron_mg_l",
+    "qw-tco": "tco_mg_l",
+    "qw-tcb": "tcb_cfu_ml",
+  };
+  const values = {};
+  Object.keys(fields).forEach((id) => {
+    const raw = value(id);
+    if (raw !== "") {
+      values[fields[id]] = Number(raw);
+    }
+  });
+  return values;
+}
+
+async function submitQuality() {
+  const payload = await apiPost(
+    "/api/recovery/runs/" + encodeURIComponent(value("batch-select")) + "/quality",
+    { actor: value("operator"), values: qualityValues(), lab_report: value("qw-report") }
+  );
+  write("run-view", payload);
+  return payload;
+}
+
+async function settleRecovery() {
+  const payload = await apiPost(
+    "/api/recovery/runs/" + encodeURIComponent(value("batch-select")) + "/settle",
+    {
+      actor: value("operator"),
+      force_divert: element("m-force-divert").checked,
+      actual: {
+        vapor_kg: numberValue("m-vapor"),
+        condensate_kg: numberValue("m-condensate"),
+        water_to_hlt_kg: numberValue("m-hlt-water"),
+        water_diverted_kg: numberValue("m-diverted"),
+        hlt_temp_c: numberValue("m-hlt-temp"),
+        cold_temp_c: numberValue("m-cold-temp"),
+      },
+    }
+  );
+  write("run-view", payload);
+  return payload;
+}
+
+async function loadRecoveryReport() {
+  const report = await apiGet("/api/recovery/report");
+  write("report-view", report);
+  return report;
+}
+
+async function estimateRecovery() {
+  const payload = await apiPost(
+    "/api/recovery/units/" + encodeURIComponent(value("unit-id")) + "/estimate",
+    { vapor_kg: numberValue("est-vapor"), condensate_kg: numberValue("est-condensate") }
+  );
+  write("estimate-view", payload);
+  return payload;
+}
+
 async function loadAlarms() {
   const status = value("alarm-status") || "active";
   const payload = await apiGet("/api/alarms?status=" + encodeURIComponent(status));

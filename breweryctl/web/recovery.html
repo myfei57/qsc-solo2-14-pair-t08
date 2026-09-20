@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BreweryCtl · 余热回收</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>BreweryCtl 余热回收</h1>
+      <nav>
+        <a href="/mash">糖化</a>
+        <a href="/ferment">发酵</a>
+        <a href="/cip">清洗 CIP</a>
+        <a class="active" href="/recovery">余热回收</a>
+        <a href="/alarms">告警与审计</a>
+      </nav>
+    </header>
+    <div class="banner">
+      回收单元 <strong id="banner-units">-</strong>
+      已结算批次 <strong id="banner-settled">-</strong>
+      活跃告警 <strong id="banner-alarms">-</strong>
+      闩锁 <strong id="banner-latches">-</strong>
+    </div>
+    <main>
+      <section>
+        <h2>批次回收台账</h2>
+        <label for="batch-select">批次</label>
+        <select id="batch-select" onchange="refreshRecoveryRun()"></select>
+        <label for="operator">操作员</label>
+        <input id="operator" value="console" />
+        <label for="unit-id">回收单元 ID</label>
+        <input id="unit-id" placeholder="自动从 GET /api/recovery/units 填入" />
+        <div class="grid">
+          <label>计划二次蒸汽 (kg)<input id="planned-vapor" type="number" value="800" /></label>
+          <label>计划冷凝水 (kg)<input id="planned-condensate" type="number" value="1000" /></label>
+        </div>
+        <button onclick="run(armRecovery, 'recovery-log', refreshRecoveryRuns)">挂账（理论热平衡）</button>
+        <button onclick="run(() => apiPost('/api/recovery/runs/' + value('batch-select') + '/capture', {}), 'recovery-log', refreshRecoveryRun)">
+          开始捕获
+        </button>
+        <div id="recovery-log"></div>
+        <pre id="run-view">尚未加载</pre>
+      </section>
+
+      <section>
+        <h2>水质化验（合格才允许直补热水罐）</h2>
+        <div class="grid">
+          <label>电导率 µS/cm<input id="qw-cond" type="number" value="42" /></label>
+          <label>pH<input id="qw-ph" type="number" step="0.1" value="7.2" /></label>
+          <label>总硬度 mg/L<input id="qw-hardness" type="number" value="30" /></label>
+          <label>氯化物 mg/L<input id="qw-chloride" type="number" /></label>
+          <label>硫酸盐 mg/L<input id="qw-sulfate" type="number" /></label>
+          <label>硝酸盐 mg/L<input id="qw-nitrate" type="number" /></label>
+          <label>铁 mg/L<input id="qw-iron" type="number" step="0.01" /></label>
+          <label>TOC mg/L<input id="qw-tco" type="number" step="0.1" /></label>
+          <label>菌落总数 CFU/mL<input id="qw-tcb" type="number" /></label>
+        </div>
+        <label for="qw-report">化验单编号/备注</label>
+        <input id="qw-report" placeholder="如 LAB-2026-0912" />
+        <button onclick="run(submitQuality, 'recovery-log', refreshRecoveryRun)">提交化验</button>
+      </section>
+
+      <section>
+        <h2>表计结算</h2>
+        <div class="grid">
+          <label>捕获二次蒸汽 (kg)<input id="m-vapor" type="number" value="700" /></label>
+          <label>冷凝水 (kg)<input id="m-condensate" type="number" value="950" /></label>
+          <label>入热水罐水量 (kg)<input id="m-hlt-water" type="number" value="1600" /></label>
+          <label>排放水量 (kg)<input id="m-diverted" type="number" value="0" /></label>
+          <label>热水罐温度 ℃<input id="m-hlt-temp" type="number" value="78" /></label>
+          <label>补水温度 ℃<input id="m-cold-temp" type="number" value="15" /></label>
+        </div>
+        <label><input id="m-force-divert" type="checkbox" /> 强制排放（即使化验合格）</label>
+        <button onclick="run(settleRecovery, 'recovery-log', () => { refreshRecoveryRun(); loadRecoveryReport(); })">
+          结算并核算
+        </button>
+      </section>
+
+      <section>
+        <h2>回收核算报表</h2>
+        <button class="secondary" onclick="run(loadRecoveryReport, 'recovery-log')">刷新汇总</button>
+        <pre id="report-view">尚未加载</pre>
+      </section>
+
+      <section>
+        <h2>投建前估算</h2>
+        <div class="grid">
+          <label>单批二次蒸汽 (kg)<input id="est-vapor" type="number" value="800" /></label>
+          <label>单批冷凝水 (kg)<input id="est-condensate" type="number" value="1000" /></label>
+        </div>
+        <button class="secondary" onclick="run(estimateRecovery, 'recovery-log')">估算合格/不合格两种情景</button>
+        <pre id="estimate-view">尚未加载</pre>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+    <script>
+      initRecoveryPage();
+    </script>
+  </body>
+</html>

@@ -113,6 +113,30 @@ class ReadingQuality(str, Enum):
     REJECTED = "rejected"
 
 
+class RecoveryRoute(str, Enum):
+    """余热回收的水回路去向。"""
+
+    INDIRECT = "indirect"  # 间壁换热，凝结水不进入酿造水
+    DIRECT = "direct"  # 水质合格，凝结水直接补入热水罐
+    DIVERTED = "diverted"  # 水质不合格，切至地漏
+
+
+class RecoveryStage(str, Enum):
+    """批次余热回收运行状态。"""
+
+    ARMED = "armed"  # 等待煮沸开始
+    CAPTURING = "capturing"  # 正在回收二次蒸汽/冷凝水
+    SETTLED = "settled"  # 批次结束并完成核算
+
+
+class QualityStatus(str, Enum):
+    """冷凝水水质判定。"""
+
+    PENDING = "pending"
+    PASSED = "passed"
+    FAILED = "failed"
+
+
 class DocMixin:
     """把数据类转换为可持久化文档。"""
 
@@ -396,3 +420,74 @@ class Batch(DocMixin):
     created_at: str = ""
     updated_at: str = ""
     completed_at: str | None = None
+
+
+@dataclass
+class HeatRecoveryUnit(DocMixin):
+    """一条糖化线对应的余热回收单元配置（闪蒸罐 + 冷凝器 + 阀组）。"""
+
+    id: str
+    code: str
+    brewery_id: str
+    line_id: str
+    supply_temp_c: float = 143.6
+    flash_temp_c: float = 100.0
+    output_temp_c: float = 80.0
+    cold_temp_c: float = 15.0
+    target_temp_c: float = 78.0
+    hx_efficiency: float = 0.90
+    vapor_capture_ratio: float = 0.95
+    hlt_capacity_l: float = 10000.0
+    batches_per_year: int = 300
+    steam_price_per_t: float = 260.0
+    water_price_per_t: float = 4.5
+    steam_to_tco2: float = 0.20
+    route: str = RecoveryRoute.INDIRECT.value
+    updated_at: str = ""
+
+
+@dataclass
+class WaterQualityCheck(DocMixin):
+    """一次冷凝水水质化验结果；合格才允许直接回用。"""
+
+    id: str
+    unit_id: str
+    batch_id: str | None
+    status: str = QualityStatus.PENDING.value
+    conductivity_us_cm: float | None = None
+    ph: float | None = None
+    hardness_mg_l: float | None = None
+    chloride_mg_l: float | None = None
+    sulfate_mg_l: float | None = None
+    nitrate_mg_l: float | None = None
+    iron_mg_l: float | None = None
+    tco_mg_l: float | None = None
+    tcb_cfu_ml: float | None = None
+    coliform: bool | None = None
+    online_ok: bool | None = None
+    failed_items: list[str] = field(default_factory=list)
+    lab_report: str = ""
+    checked_by: str = ""
+    checked_at: str = ""
+
+
+@dataclass
+class RecoveryRun(DocMixin):
+    """单批次余热回收运行台账：计划量 → 实际表计 → 核算结果。"""
+
+    id: str
+    unit_id: str
+    batch_id: str
+    stage: str = RecoveryStage.ARMED.value
+    route: str = RecoveryRoute.INDIRECT.value
+    quality_check_id: str | None = None
+    planned_vapor_kg: float = 0.0
+    planned_condensate_kg: float = 0.0
+    balance: dict[str, Any] = field(default_factory=dict)
+    actual: dict[str, Any] = field(default_factory=dict)
+    settlement: dict[str, Any] = field(default_factory=dict)
+    diverted_reason: str = ""
+    started_capture_at: str | None = None
+    settled_at: str | None = None
+    settled_by: str = ""
+    updated_at: str = ""

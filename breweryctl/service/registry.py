@@ -12,6 +12,7 @@ from ..domain.boil import BoilKettle
 from ..domain.cip import CIPService
 from ..domain.co2 import CO2Controller
 from ..domain.ferment import FermentTankService
+from ..domain.heatrecovery import HeatRecoverySystem
 from ..domain.hop import HopSchedule
 from ..domain.mash import MashController
 from ..domain.ns import NamespaceRegistry
@@ -22,6 +23,7 @@ from ..persistence.store import FileStore
 from .brewing import BrewingService
 from .control import ControlService
 from .maintenance import MaintenanceService
+from .recovery import RecoveryService
 from .telemetry import TelemetryService
 
 
@@ -46,6 +48,7 @@ class ComponentRegistry:
         self.tanks = FermentTankService(
             self.store, self.settings, self.clock, self.cip, self.co2, self.alarms
         )
+        self.recovery = HeatRecoverySystem(self.store, self.clock, self.alarms, self.audit)
         self.brewing = BrewingService(
             self.store,
             self.settings,
@@ -65,6 +68,7 @@ class ComponentRegistry:
         self.control = ControlService(self.temp, self.co2, self.alarms, self.audit)
         self.telemetry = TelemetryService(self.temp, self.alarms, self.audit)
         self.maintenance = MaintenanceService(self.cip, self.tanks, self.audit)
+        self.recovery_service = RecoveryService(self.recovery)
 
     def bootstrap(self) -> dict[str, Any]:
         """确保存在可运行的默认命名空间、罐体、探头与配方。"""
@@ -76,12 +80,18 @@ class ComponentRegistry:
             "probes": 0,
             "recipe": None,
             "recovered": None,
+            "recovery_units": 0,
         }
         brewery = self.namespaces.seed_default()
         created["brewery"] = brewery["id"]
-        if not self.namespaces.lines_for(str(brewery["id"])):
+        lines = self.namespaces.lines_for(str(brewery["id"]))
+        if not lines:
             self.namespaces.add_line(str(brewery["id"]), "一号糖化线", 120.0, 2)
+            lines = self.namespaces.lines_for(str(brewery["id"]))
             created["lines"] = 1
+        if not self.recovery.units.all():
+            self.recovery.register_unit(str(brewery["id"]), str(lines[0]["id"]), "HRU-01")
+            created["recovery_units"] = 1
         tanks = self.tanks.list_tanks(str(brewery["id"]))
         if not tanks:
             tanks = [
@@ -129,6 +139,7 @@ class ComponentRegistry:
             "boil": self.boil.summary(),
             "ferment": self.tanks.summary(),
             "maintenance": self.maintenance.summary(),
+            "recovery": self.recovery.summary(),
             "control": self.control.summary(),
             "alarms": self.alarms.summary(),
             "audit_entries": self.audit.count(),

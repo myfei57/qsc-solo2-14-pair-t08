@@ -44,8 +44,8 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertIn("banner", overview)
         status, pages = self.call("GET", "/api/pages")
-        self.assertEqual(4, len(pages["pages"]))
-        self.assertGreaterEqual(len(pages["routes"]), 50)
+        self.assertEqual(5, len(pages["pages"]))
+        self.assertGreaterEqual(len(pages["routes"]), 60)
 
     def test_sequence_error_maps_to_conflict(self) -> None:
         batch_id = create_batch(self.app)
@@ -67,3 +67,93 @@ class ApiTest(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/static/app.js", timeout=10) as response:
             script = response.read().decode("utf-8")
         self.assertIn("initMashPage", script)
+
+    def test_recovery_end_to_end(self) -> None:
+        status, units = self.call("GET", "/api/recovery/units")
+        self.assertEqual(200, status)
+        unit_id = units["units"][0]["id"]
+        batch_id = create_batch(self.app)
+        status, payload = self.call(
+            "POST",
+            "/api/recovery/runs",
+            {
+                "unit_id": unit_id,
+                "batch_id": batch_id,
+                "planned_vapor_kg": 800,
+                "planned_condensate_kg": 1000,
+            },
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("armed", payload["run"]["stage"])
+        status, _ = self.call("POST", f"/api/recovery/runs/{batch_id}/capture", {})
+        self.assertEqual(200, status)
+        status, payload = self.call(
+            "POST",
+            f"/api/recovery/runs/{batch_id}/quality",
+            {
+                "actor": "lab",
+                "values": {"conductivity_us_cm": 42.0, "ph": 7.2},
+            },
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("passed", payload["quality_check"]["status"])
+        status, payload = self.call(
+            "POST",
+            f"/api/recovery/runs/{batch_id}/settle",
+            {
+                "actor": "lab",
+                "actual": {
+                    "vapor_kg": 700,
+                    "condensate_kg": 950,
+                    "water_to_hlt_kg": 1600,
+                    "water_diverted_kg": 0,
+                    "hlt_temp_c": 78,
+                    "cold_temp_c": 15,
+                },
+            },
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("direct", payload["run"]["route"])
+        status, report = self.call("GET", "/api/recovery/report")
+        self.assertEqual(200, status)
+        self.assertEqual(1, report["settled_batches"])
+        self.assertGreater(report["totals"]["steam_saved_t"], 0.0)
+
+    def test_recovery_bad_quality_returns_conflict_free_diversion(self) -> None:
+        status, units = self.call("GET", "/api/recovery/units")
+        unit_id = units["units"][0]["id"]
+        batch_id = create_batch(self.app)
+        self.call(
+            "POST",
+            "/api/recovery/runs",
+            {
+                "unit_id": unit_id,
+                "batch_id": batch_id,
+                "planned_vapor_kg": 800,
+                "planned_condensate_kg": 1000,
+            },
+        )
+        self.call("POST", f"/api/recovery/runs/{batch_id}/capture", {})
+        status, payload = self.call(
+            "POST",
+            f"/api/recovery/runs/{batch_id}/quality",
+            {"actor": "lab", "values": {"conductivity_us_cm": 999.0}},
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("failed", payload["quality_check"]["status"])
+        status, payload = self.call(
+            "POST",
+            f"/api/recovery/runs/{batch_id}/settle",
+            {
+                "actor": "lab",
+                "actual": {
+                    "vapor_kg": 700,
+                    "condensate_kg": 950,
+                    "water_to_hlt_kg": 1600,
+                    "hlt_temp_c": 78,
+                },
+            },
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("diverted", payload["run"]["route"])
+        self.assertEqual(0.0, payload["run"]["settlement"]["water_reused_t"])

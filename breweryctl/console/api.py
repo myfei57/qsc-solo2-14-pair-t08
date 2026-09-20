@@ -69,6 +69,19 @@ ROUTES: tuple[tuple[str, str], ...] = (
     ("POST", "/api/alarms/{alarm_id}/ack"),
     ("POST", "/api/alarms/{alarm_id}/resolve"),
     ("GET", "/api/audit"),
+    ("GET", "/api/recovery/units"),
+    ("POST", "/api/recovery/units"),
+    ("GET", "/api/recovery/units/{unit_id}"),
+    ("POST", "/api/recovery/units/{unit_id}/configure"),
+    ("POST", "/api/recovery/units/{unit_id}/estimate"),
+    ("GET", "/api/recovery/runs"),
+    ("POST", "/api/recovery/runs"),
+    ("GET", "/api/recovery/runs/{batch_id}"),
+    ("POST", "/api/recovery/runs/{batch_id}/capture"),
+    ("POST", "/api/recovery/runs/{batch_id}/quality"),
+    ("POST", "/api/recovery/runs/{batch_id}/settle"),
+    ("GET", "/api/recovery/report"),
+    ("GET", "/api/recovery/ledger"),
 )
 
 
@@ -530,6 +543,98 @@ class ApiRouter:
         entries = self.registry.audit.history(batch_id=batch_id, limit=limit)
         return {"entries": entries, "count": len(entries)}
 
+    # ---- 余热回收 -----------------------------------------------------------
+
+    def _handle_GET_api_recovery_units(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {"units": self.registry.recovery_service.list_units()}
+
+    def _handle_POST_api_recovery_units(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        unit = self.registry.recovery_service.register_unit(
+            body.get("brewery_id"),
+            body.get("line_id"),
+            body.get("code"),
+        )
+        return {"unit": unit}
+
+    def _handle_GET_api_recovery_units_unit_id(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {"unit": self.registry.recovery.recovery.get_unit(params["unit_id"])}
+
+    def _handle_POST_api_recovery_units_unit_id_configure(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {"unit": self.registry.recovery_service.configure(params["unit_id"], body)}
+
+    def _handle_POST_api_recovery_units_unit_id_estimate(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery_service.estimate(params["unit_id"], body)
+
+    def _handle_GET_api_recovery_runs(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {"runs": self.registry.recovery_service.list_runs(_first(query, "unit_id"))}
+
+    def _handle_POST_api_recovery_runs(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        run = self.registry.recovery_service.arm(
+            body.get("unit_id"),
+            body.get("batch_id"),
+            body.get("planned_vapor_kg"),
+            body.get("planned_condensate_kg"),
+        )
+        return {"run": run}
+
+    def _handle_GET_api_recovery_runs_batch_id(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery_service.run_view(params["batch_id"])
+
+    def _handle_POST_api_recovery_runs_batch_id_capture(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {"run": self.registry.recovery_service.start_capture(params["batch_id"])}
+
+    def _handle_POST_api_recovery_runs_batch_id_quality(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        values = _require_map(body, "values")
+        check = self.registry.recovery_service.record_quality(
+            params["batch_id"],
+            body.get("actor"),
+            values,
+            lab_report=str(body.get("lab_report", "")),
+        )
+        return {"quality_check": check}
+
+    def _handle_POST_api_recovery_runs_batch_id_settle(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        meters = _require_map(body, "actual")
+        run = self.registry.recovery_service.settle(
+            params["batch_id"],
+            body.get("actor"),
+            meters,
+            force_divert=bool(body.get("force_divert", False)),
+        )
+        return {"run": run}
+
+    def _handle_GET_api_recovery_report(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery_service.report(_first(query, "unit_id"))
+
+    def _handle_GET_api_recovery_ledger(
+        self, params: dict[str, str], query: dict[str, list[str]], body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self.registry.recovery_service.ledger(_first(query, "unit_id"))
+
 
 def _handler_name(method: str, pattern: str) -> str:
     return (method + pattern).replace("/", "_").replace("-", "_").replace("{", "").replace("}", "")
@@ -575,6 +680,13 @@ def _require_list(body: dict[str, Any], field: str) -> list[Any]:
     value = body.get(field)
     if not isinstance(value, list):
         raise ValidationError(f"{field} 必须是数组", field=field)
+    return value
+
+
+def _require_map(body: dict[str, Any], field: str) -> dict[str, Any]:
+    value = body.get(field)
+    if not isinstance(value, dict):
+        raise ValidationError(f"{field} 必须是对象", field=field)
     return value
 
 
